@@ -342,6 +342,39 @@ try {
 - If mixing environments, use a **reverse proxy** so the browser talks to one consistent origin.
 - Troubleshooting: open fresh incognito window, clear site data, verify request includes credentials.
 
+### Next.js + Turbopack WASM Fix
+
+The `@synonymdev/pubky` CJS entry uses `readFileSync` to load `pubky_bg.wasm`. This fails in Turbopack's sandbox with `ENOENT`. Fix by adding the package to `serverExternalPackages` in `next.config.ts`:
+
+```typescript
+const nextConfig: NextConfig = {
+  serverExternalPackages: ["@synonymdev/pubky"],
+  // webpack config for production builds (ignored by Turbopack):
+  webpack: (config, { isServer }) => {
+    config.experiments = { ...config.experiments, asyncWebAssembly: true, layers: true };
+    if (isServer) {
+      config.externals = config.externals || [];
+      config.externals.push({ "@synonymdev/pubky": "commonjs @synonymdev/pubky" });
+    }
+    return config;
+  },
+};
+```
+
+### `publicStorage` Does NOT Work Reliably in the Browser
+
+**Critical:** `pubky.publicStorage.getJson()` and `.get()` silently fail in the browser — no HTTP request is made. The WASM-based Pkarr resolution does not work from browser context for cross-user public reads.
+
+**Workaround:** Proxy public reads through your backend/indexer. For example, to display other users' profile names, add a server-side endpoint that fetches `pubky://{pk}/pub/pubky.app/profile.json` using the Rust SDK's `pubky.public_storage().get(&uri)`, which works reliably.
+
+**What DOES work in the browser:**
+- `session.storage.*` (reads/writes to your own homeserver via authenticated session)
+- `pubky.startAuthFlow()` (auth flows via relay)
+- `pubky.restoreSession()` (session restoration)
+
+**What does NOT work:**
+- `pubky.publicStorage.*` (cross-user reads requiring Pkarr resolution)
+
 ---
 
 ## Rust SDK

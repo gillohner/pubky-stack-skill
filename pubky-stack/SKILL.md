@@ -235,3 +235,7 @@ See `references/repository-reference.md` for all repos, packages, and URLs.
 - **Rust SDK may differ from JS SDK** in naming/structure. Verify at docs.rs/pubky.
 - **Keypair loss = identity loss.** Always back up via recovery file or BIP39 phrase.
 - **Browser cookie partitioning:** Keep SDK client and homeserver on the same origin family. See `references/sdk-usage.md` for details.
+- **`publicStorage` does NOT work in the browser.** Cross-user reads silently fail. Proxy public reads through your backend/indexer instead. See `references/sdk-usage.md` Browser Notes.
+- **Next.js Turbopack + WASM:** Add `@synonymdev/pubky` to `serverExternalPackages` in next.config.ts. See `references/sdk-usage.md`.
+- **Crockford Base32:** The Rust `base32` crate does NOT match JS manual encoding for 64-bit values (bit padding mismatch). Write a custom decoder. See `references/indexer-patterns.md`.
+- **Auth capabilities:** Only request permissions for your app's namespace. Reading others' profiles is public and doesn't need auth caps. Over-scoping causes unnecessary Pubky Ring permission prompts.

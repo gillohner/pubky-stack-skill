@@ -207,6 +207,58 @@ setInterval(pollOnce, 30_000); // every 30 seconds
 
 > **Note:** The exact return type and format of `publicStorage.list()` should be verified against the SDK's TypeScript types. The conceptual pattern above is correct — `list()` returns entries under a path, which you then `get()` individually.
 
+### Serving Profile Data
+
+Apps commonly display other users' profile names (from `/pub/pubky.app/profile.json`). Since `publicStorage` doesn't work reliably in the browser (see `sdk-usage.md`), **proxy profile reads through your indexer**:
+
+```rust
+// Indexer endpoint: GET /api/user/{pk}/profile
+async fn get_profile(pubky: &Pubky, public_key: &str) -> Result<serde_json::Value> {
+    let uri = format!("pubky://{}/pub/pubky.app/profile.json", public_key);
+    let response = pubky.public_storage().get(&uri).await?;
+    let bytes = response.bytes().await?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+```
+
+The frontend then fetches profiles from your indexer API with standard HTTP — no WASM/Pkarr needed client-side. Cache with React Query (`staleTime: 5min`) or similar.
+
+**Auth capabilities note:** Only request capabilities for your own app namespace (e.g., `/pub/myapp/:rw`). Reading other users' public data like `profile.json` does NOT require auth — it goes through `publicStorage` on the server side.
+
+### Crockford Base32 Timestamp IDs
+
+A common pattern for resource IDs is Crockford Base32 encoding of unix microseconds (13 characters for a 64-bit value). **Warning:** The Rust `base32` crate's Crockford implementation does NOT match a typical JS implementation.
+
+The issue: 13 chars × 5 bits = 65 bits, but a u64/i64 is 64 bits. The extra bit is handled differently:
+- **JS (manual encoding):** padding zero at the MSB (most significant bit)
+- **Rust `base32` crate:** drops the LSB (least significant bit) as padding
+
+This effectively **halves the decoded value** when using the Rust crate, causing timestamp validation to fail.
+
+**Fix:** Write a custom Crockford decoder in Rust that matches the JS encoding:
+
+```rust
+fn crockford_decode(s: &str) -> Option<u64> {
+    let mut value: u64 = 0;
+    for c in s.chars() {
+        let digit = match c.to_ascii_uppercase() {
+            '0' | 'O' => 0, '1' | 'I' | 'L' => 1,
+            '2' => 2, '3' => 3, '4' => 4, '5' => 5, '6' => 6, '7' => 7,
+            '8' => 8, '9' => 9, 'A' => 10, 'B' => 11, 'C' => 12,
+            'D' => 13, 'E' => 14, 'F' => 15, 'G' => 16, 'H' => 17,
+            'J' => 18, 'K' => 19, 'M' => 20, 'N' => 21, 'P' => 22,
+            'Q' => 23, 'R' => 24, 'S' => 25, 'T' => 26, 'V' => 27,
+            'W' => 28, 'X' => 29, 'Y' => 30, 'Z' => 31,
+            _ => return None,
+        };
+        value = (value << 5) | digit as u64;
+    }
+    Some(value)
+}
+```
+
+Do NOT use `base32::decode(Alphabet::Crockford, ...)` for this purpose.
+
 ### Design Considerations
 
 **Database choice:**

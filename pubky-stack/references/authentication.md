@@ -55,6 +55,8 @@ Comma-separated path patterns with permissions:
 - `/pub/another-app/folder/:w` — write-only to a specific folder
 - `/pub/:r` — read-only access to all public data
 
+**Important:** Only request capabilities for namespaces your app **writes to**. Do NOT request `/pub/pubky.app/:rw` just to read other users' profiles — reading public data does not require auth (use `publicStorage` on your server, or proxy through your indexer). Over-scoping capabilities causes Pubky Ring to show unnecessary permission prompts.
+
 ### Validate User-Supplied Capabilities
 
 ```javascript
