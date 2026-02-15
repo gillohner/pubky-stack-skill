@@ -180,7 +180,7 @@ Homeservers are per-user stores. Cross-user queries need an indexer.
 - Production: `https://nexus.pubky.app/swagger-ui/`
 - API prefix: `/v0` (unstable, breaking changes expected)
 
-Custom indexers: Poll via `pubky.publicStorage.list()`, parse, store in your DB, serve your API.
+Custom indexers: Use the homeserver's `/events-stream` endpoint with `?path=` prefix filtering and per-user cursors for efficient incremental polling. Fallback: poll via `pubky.publicStorage.list()`.
 
 See `references/indexer-patterns.md`.
 

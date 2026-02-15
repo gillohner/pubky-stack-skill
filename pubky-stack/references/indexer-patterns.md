@@ -101,9 +101,76 @@ When to build your own:
 4. Serve via your API
 ```
 
-### Polling Approach (Conceptual)
+### Efficient Approach: `/events-stream` with Path Filtering
 
-Using the JS SDK v0.6.0 `publicStorage.list()` to poll for changes:
+Homeservers expose an `/events-stream` endpoint that supports **per-user cursors** and **path prefix filtering**. This is far more efficient than polling `publicStorage.list()` because:
+- You only receive events for your app's namespace (not all user data)
+- Cursors let you resume from where you left off (no reprocessing)
+- Multiple users on the same homeserver can be batched into a single request
+
+**URL format:**
+```
+https://<homeserver_pk>/events-stream?path=/pub/myapp/data/&user=<pk1>:<cursor1>&user=<pk2>:<cursor2>
+```
+
+- `path=` — filters events to only this path prefix (e.g., `/pub/pubky-canva/pixels/`)
+- `user=<pk>` — subscribe to events for this user (no cursor = start from beginning)
+- `user=<pk>:<cursor>` — resume from a specific cursor position
+- Multiple `user=` params can be combined in one request
+
+**Response format (SSE):**
+```
+event: PUT
+data: pubky://<user_pk>/pub/myapp/data/<id>
+data: cursor: 42
+data: content_hash: abc123
+
+event: PUT
+data: pubky://<user_pk>/pub/myapp/data/<id2>
+data: cursor: 43
+data: content_hash: def456
+
+```
+
+Events are separated by blank lines. Each event has:
+- `event:` — the event type (`PUT`, `DEL`)
+- `data:` lines — the pubky URI, cursor value, and content hash
+
+**Rust indexer example (polling pattern):**
+```rust
+use pubky::{Pubky, PubkyHttpClient};
+
+// Build the events-stream URL with user filters and path prefix
+let mut url = format!(
+    "https://{}/events-stream?path=/pub/myapp/data/",
+    homeserver_pk
+);
+for (user_pk, cursor) in &users {
+    if cursor.is_empty() {
+        url.push_str(&format!("&user={}", user_pk));
+    } else {
+        url.push_str(&format!("&user={}:{}", user_pk, cursor));
+    }
+}
+
+// Fetch events
+let response = pubky.client().request(pubky::Method::GET, &url).send().await?;
+let text = response.text().await?;
+
+// Parse SSE events, process each PUT, then persist the cursor per-user
+// so the next poll resumes from where you left off
+```
+
+**Key design points:**
+- Store each user's cursor in your DB alongside their public key
+- Group users by homeserver to minimize HTTP requests
+- On each poll, only new events since the last cursor are returned
+- Parse the `pubky://` URI from each event to extract user PK and resource path
+- After processing an event, update that user's stored cursor
+
+### Polling Approach (Alternative — no cursor support)
+
+Using the JS SDK v0.6.0 `publicStorage.list()` to poll for changes. Simpler but less efficient — rescans all entries each time:
 
 ```javascript
 // CONCEPTUAL — adapt to your needs
